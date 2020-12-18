@@ -25,6 +25,7 @@ import os
 import pickle
 import shlex
 import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -729,12 +730,12 @@ class Qtile(CommandObject):
 
     def enter_event(self, event) -> Optional[bool]:
         win = self.windows_map.get(event.event, None)
-        if win is None:
-            screen = self.find_screen(event.root_x, event.root_y)
-        else:
+        try:
             if win.group.screen is self.current_screen:
                 return True
             screen = win.group.screen
+        except AttributeError:
+            screen = self.find_screen(event.root_x, event.root_y)
         if screen:
             self.focus_screen(screen.index, warp=False)
         return None
@@ -1157,11 +1158,10 @@ class Qtile(CommandObject):
             return
         self.restart()
 
-    def cmd_spawn(self, cmd):
-        """Run cmd in a shell.
+    def cmd_spawn(self, cmd, shell=False):
+        """Run cmd, in a shell or not (default).
 
-        cmd may be a string, which is parsed by shlex.split, or a list (similar
-        to subprocess.Popen).
+        cmd may be a string or a list (similar to subprocess.Popen).
 
         Examples
         ========
@@ -1170,7 +1170,11 @@ class Qtile(CommandObject):
 
             spawn(["xterm", "-T", "Temporary terminal"])
         """
-        if isinstance(cmd, str):
+        if shell:
+            if not isinstance(cmd, str):
+                cmd = subprocess.list2cmdline(cmd)
+            args = ["/bin/sh", "-c", cmd]
+        elif isinstance(cmd, str):
             args = shlex.split(cmd)
         else:
             args = list(cmd)
@@ -1401,7 +1405,7 @@ class Qtile(CommandObject):
         mb.start_input(prompt, f, "group", strict_completer=True)
 
     def cmd_spawncmd(self, prompt="spawn", widget="prompt",
-                     command="%s", complete="cmd"):
+                     command="%s", complete="cmd", shell=True):
         """Spawn a command using a prompt widget, with tab-completion.
 
         Parameters
@@ -1417,7 +1421,7 @@ class Qtile(CommandObject):
         """
         def f(args):
             if args:
-                self.cmd_spawn(command % args)
+                self.cmd_spawn(command % args, shell=shell)
         try:
             mb = self.widgets_map[widget]
             mb.start_input(prompt, f, complete)
