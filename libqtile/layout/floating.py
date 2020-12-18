@@ -191,23 +191,23 @@ class Floating(Layout):
         return True
 
     def compute_client_position(self, client, screen_rect):
-        """ recompute client.x and client.y, returning whether or not to place
-        this client above other windows or not """
-        above = True
-
+        """ recompute client.x, client.y and, if a parent window exists,
+        client.z """
+        transient_for = client.window.get_wm_transient_for()
+        win = client.group.qtile.windows_map.get(transient_for)
+        if win is not None:
+            client.z.layout = win.z.layout + 1
+            client.z.ontopwid = transient_for
         if client.has_user_set_position() and not self.on_screen(client, screen_rect):
             # move to screen
             client.x = screen_rect.x + client.x
             client.y = screen_rect.y + client.y
         if not client.has_user_set_position() or not self.on_screen(client, screen_rect):
             # client has not been properly placed before or it is off screen
-            transient_for = client.window.get_wm_transient_for()
-            win = client.group.qtile.windows_map.get(transient_for)
             if win is not None:
                 # if transient for a window, place in the center of the window
                 center_x = win.x + win.width / 2
                 center_y = win.y + win.height / 2
-                above = False
             else:
                 center_x = screen_rect.x + screen_rect.width / 2
                 center_y = screen_rect.y + screen_rect.height / 2
@@ -226,7 +226,6 @@ class Floating(Layout):
 
             client.x = int(round(x))
             client.y = int(round(y))
-        return above
 
     def configure(self, client, screen_rect):
         if client.has_focus:
@@ -255,15 +254,13 @@ class Floating(Layout):
             client.cmd_bring_to_front()
 
         else:
-            above = False
-
             # We definitely have a screen here, so let's be sure we'll float on screen
             try:
                 client.float_x
                 client.float_y
             except AttributeError:
                 # this window hasn't been placed before, let's put it in a sensible spot
-                above = self.compute_client_position(client, screen_rect)
+                self.compute_client_position(client, screen_rect)
 
             client.place(
                 client.x,
@@ -272,17 +269,24 @@ class Floating(Layout):
                 client.height,
                 bw,
                 bc,
-                above,
+                z=None
             )
         client.unhide()
 
     def add(self, client):
+        client.z.layout = max([c.z.layout + 1 for c in self.clients], default=0)
+        if client.group and client.group.floating_layout == self:  # "manual" floating layouts share their clients
+            client.z.group = 1
         self.clients.append(client)
         self.focused = client
 
     def remove(self, client):
         if client not in self.clients:
             return
+
+        if client.group and client.group.floating_layout == self:  # "manual" floating layouts share their clients
+            client.z.group = 0
+        client.z.ontopwid = None
 
         next_focus = self.focus_next(client)
         if client is self.focused:
